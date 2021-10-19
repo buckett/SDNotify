@@ -68,7 +68,6 @@ WantedBy=multi-user.target
 ```
 
 ## Dependencies
-* [jna](https://github.com/java-native-access/jna)
 * [slf4j](https://www.slf4j.org/)
 
 

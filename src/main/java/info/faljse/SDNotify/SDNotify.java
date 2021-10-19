@@ -1,11 +1,15 @@
 package info.faljse.SDNotify;
 
-import info.faljse.SDNotify.io.NativeDomainSocket;
-import info.faljse.SDNotify.jna.CLibrary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.net.StandardProtocolFamily;
+import java.net.UnixDomainSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 
 
 /**
@@ -32,7 +36,7 @@ public class SDNotify {
     private final static String NOTIFY_SOCKET = "NOTIFY_SOCKET";
     private final static String WATCHDOG_USEC = "WATCHDOG_USEC";
     private final static String WATCHDOG_PID = "WATCHDOG_PID";
-    private NativeDomainSocket sd;
+    private SocketChannel sd;
     private static volatile SDNotify instance;
     private volatile boolean available = false;
 
@@ -43,9 +47,12 @@ public class SDNotify {
             return;
         }
         try {
-            CLibrary.SockAddr sockAddr = new CLibrary.SockAddr(socketName);
-            sd = new NativeDomainSocket();
-            sd.connect(sockAddr);
+            Path socketFile = Path.of(socketName);
+            UnixDomainSocketAddress address =
+                    UnixDomainSocketAddress.of(socketFile);
+            sd = SocketChannel
+                    .open(StandardProtocolFamily.UNIX);
+            sd.connect(address);
         } catch (Exception e) {
             log.warn("Notify init failed", e);
         }
@@ -127,7 +134,7 @@ public class SDNotify {
      *
      * @param pid The main process ID (PID) of the service
      */
-    public static void sendMainPID(int pid) {
+    public static void sendMainPID(long pid) {
         SDNotify.getInstance().sendString(String.format("MAINPID=%d", pid));
     }
 
@@ -190,17 +197,20 @@ public class SDNotify {
     private void sendString(String s) {
         if (sd == null || available == false || s == null)
             return;
-        sd.send(s.getBytes(StandardCharsets.UTF_8), s.length());
+        try {
+            sd.write(ByteBuffer.wrap(s.getBytes(StandardCharsets.UTF_8)));
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to write.", e);
+        }
     }
 
     /**
      * Returns the process ID (PID) of the calling process.
-     * Running java 9 there is also ProcessHandle.current().pid();
      *
      * @return the process ID (PID) of the calling process.
      */
-    public static int getPid() {
-        return CLibrary.clib.getpid();
+    public static long getPid() {
+        return ProcessHandle.current().pid();
     }
 
     private static boolean isEmpty(String s) {
